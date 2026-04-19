@@ -1,206 +1,147 @@
-import os
+import streamlit as st
 import pickle
 import re
 import pandas as pd
-from flask import Flask, render_template, request, jsonify
 
-app = Flask(__name__)
+# --- Konfigurasi Halaman ---
+st.set_page_config(
+    page_title="Sentimen Analisis CNBC",
+    page_icon="🚀",
+    layout="wide"
+)
 
-# --- 1. Load Models & Tools ---
-def load_pickle(filename):
-    try:
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-    except Exception as e:
-        print(f"Error loading {filename}: {e}")
-        return None
+# --- Fungsi Load Model & Tools ---
+@st.cache_resource
+def load_assets():
+    # Nama file sesuai dengan yang Anda unggah
+    file_names = {
+        'tfidf': 'tfidf (2).pkl',
+        'tools': 'preprocessing_tools (1).pkl',
+        'nb_base': 'nb_baseline (2).pkl',
+        'nb_opt': 'nb_optimized (2).pkl',
+        'svm_base': 'svm_baseline (2).pkl',
+        'svm_opt': 'svm_optimized (2).pkl'
+    }
+    
+    assets = {}
+    for key, name in file_names.items():
+        try:
+            with open(name, 'rb') as f:
+                assets[key] = pickle.load(f)
+        except Exception as e:
+            st.error(f"Gagal memuat {name}: {e}")
+            assets[key] = None
+    return assets
 
-# Load tools
-tfidf = load_pickle('tfidf (2).pkl')
-tools = load_pickle('preprocessing_tools (1).pkl')
+# Memuat semua aset
+assets = load_assets()
+tfidf = assets['tfidf']
+tools = assets['tools']
+models = {
+    'Naive Bayes (Baseline)': assets['nb_base'],
+    'Naive Bayes (Optimized)': assets['nb_opt'],
+    'SVM (Baseline)': assets['svm_base'],
+    'SVM (Optimized)': assets['svm_opt']
+}
+
+# Ambil tool preprocessing jika ada
 stemmer = tools.get('stemmer') if tools else None
 stopword_remover = tools.get('stopword_remover') if tools else None
 
-# Load Models
-models = {
-    'NB_Baseline': load_pickle('nb_baseline (2).pkl'),
-    'NB_Optimized': load_pickle('nb_optimized (2).pkl'),
-    'SVM_Baseline': load_pickle('svm_baseline (2).pkl'),
-    'SVM_Optimized': load_pickle('svm_optimized (2).pkl')
-}
-
-# --- 2. Preprocessing Logic ---
-def preprocess_step_by_step(text):
+# --- Fungsi Preprocessing ---
+def preprocess_text(text):
     steps = []
     
-    # Raw
-    current_text = text
-    steps.append({"step": "Teks Asli", "result": current_text})
+    # 1. Teks Asli
+    steps.append({"tahap": "Teks Asli", "hasil": text})
     
-    # Case Folding & Cleaning
-    current_text = current_text.lower()
-    current_text = re.sub(r'[^a-zA-Z\s]', '', current_text)
-    steps.append({"step": "Case Folding & Cleaning", "result": current_text})
+    # 2. Case Folding & Cleaning
+    clean = text.lower()
+    clean = re.sub(r'[^a-zA-Z\s]', '', clean)
+    steps.append({"tahap": "Cleaning & Case Folding", "hasil": clean})
     
-    # Tokenizing
-    tokens = current_text.split()
-    steps.append({"step": "Tokenizing", "result": ", ".join(tokens)})
+    # 3. Tokenizing (Visualisasi saja)
+    tokens = clean.split()
+    steps.append({"tahap": "Tokenizing", "hasil": str(tokens)})
     
-    # Stopword Removal
+    # 4. Stopword Removal
     if stopword_remover:
-        current_text = stopword_remover.remove(current_text)
-        tokens = current_text.split()
-        steps.append({"step": "Stopword Removal", "result": current_text})
+        clean = stopword_remover.remove(clean)
+        steps.append({"tahap": "Stopword Removal", "hasil": clean})
     
-    # Stemming
+    # 5. Stemming
     if stemmer:
-        current_text = stemmer.stem(current_text)
-        steps.append({"step": "Stemming (Sastrawi)", "result": current_text})
+        clean = stemmer.stem(clean)
+        steps.append({"tahap": "Stemming (Sastrawi)", "hasil": clean})
         
-    return current_text, steps
+    return clean, steps
 
-# --- 3. Explanation Logic ---
-def get_explanation(sentiment, model_name):
-    explanations = {
-        "positif": "Teks mengandung kata-kata kunci yang diasosiasikan model dengan sentimen mendukung, apresiasi, atau pertumbuhan ekonomi.",
-        "negatif": "Model mendeteksi pola kata yang merujuk pada kerugian, kritik, atau sentimen pesimis dalam data latih.",
-        "netral": "Teks bersifat informatif atau objektif, tidak mengandung bobot emosional yang cukup untuk dikategorikan positif/negatif."
-    }
-    return explanations.get(sentiment.lower(), "Analisis pola kata berdasarkan bobot model.")
+# --- Fungsi Penjelasan Hasil ---
+def beri_penjelasan(label):
+    if label.lower() == 'positif':
+        return "Teks ini dikategorikan **Positif** karena model mendeteksi kata-kata yang bermakna optimis, pertumbuhan, atau berita baik bagi pasar ekonomi."
+    elif label.lower() == 'negatif':
+        return "Teks ini dikategorikan **Negatif** karena model menemukan istilah yang berkaitan dengan penurunan, kerugian, atau sentimen pesimis."
+    else:
+        return "Teks ini dikategorikan **Netral** karena kalimat bersifat informatif/faktual tanpa adanya muatan emosional atau opini yang kuat."
 
-# --- 4. Routes ---
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    prediction_results = None
-    preprocessing_steps = None
-    input_text = ""
+# --- Antarmuka Pengguna (UI) ---
+st.title("📊 Dashboard Analisis Sentimen Ekonomi")
+st.markdown("""
+Aplikasi ini membandingkan hasil prediksi dari 4 model klasifikasi (Naive Bayes & SVM) 
+untuk berita ekonomi CNBC Indonesia.
+""")
 
-    if request.method == 'POST':
-        input_text = request.form.get('text_input', '')
+# Input Teks
+input_user = st.text_area("Masukkan Berita atau Opini Ekonomi:", height=150, placeholder="Contoh: IHSG hari ini menguat tajam didorong oleh sektor perbankan...")
+
+if st.button("Mulai Analisis"):
+    if not input_user.strip():
+        st.warning("Mohon masukkan teks terlebih dahulu.")
+    elif not tfidf:
+        st.error("Error: TF-IDF Vectorizer tidak termuat.")
+    else:
+        # Proses Preprocessing
+        clean_text, alur_proses = preprocess_text(input_user)
         
-        if input_text and tfidf:
-            # Preprocess
-            clean_text, preprocessing_steps = preprocess_step_by_step(input_text)
-            
-            # Vectorize
-            vec_text = tfidf.transform([clean_text])
-            
-            prediction_results = []
-            for name, model in models.items():
+        # Kolom Kiri: Preprocessing
+        st.subheader("🔍 Proses Preprocessing Teks")
+        for i, step in enumerate(alur_proses):
+            with st.expander(f"Langkah {i+1}: {step['tahap']}"):
+                st.write(step['hasil'])
+        
+        st.divider()
+        
+        # Kolom Kanan: Hasil Prediksi
+        st.subheader("🎯 Hasil Prediksi Multi-Model")
+        
+        # Transformasi TF-IDF
+        vec = tfidf.transform([clean_text])
+        
+        # Tampilkan hasil dalam grid
+        cols = st.columns(2)
+        for i, (nama_model, model) in enumerate(models.items()):
+            with cols[i % 2]:
                 if model:
-                    pred = model.predict(vec_text)[0]
+                    hasil = model.predict(vec)[0]
                     
-                    # Try to get probability if available
-                    prob = ""
-                    if hasattr(model, "predict_proba"):
-                        proba = model.predict_proba(vec_text)[0]
-                        max_idx = proba.argmax()
-                        prob = f"{proba[max_idx]*100:.2f}% Confidence"
+                    # Desain Kartu Hasil
+                    bg_color = "#d1fae5" if hasil == 'positif' else "#fee2e2" if hasil == 'negatif' else "#f3f4f6"
+                    text_color = "#065f46" if hasil == 'positif' else "#991b1b" if hasil == 'negatif' else "#374151"
                     
-                    prediction_results.append({
-                        "model": name.replace('_', ' '),
-                        "sentiment": pred,
-                        "confidence": prob,
-                        "explanation": get_explanation(pred, name)
-                    })
-
-    return render_template('index.html', 
-                           results=prediction_results, 
-                           steps=preprocessing_steps,
-                           input_text=input_text)
-
-# --- 5. HTML Template (Inline for Single File Mandate) ---
-# Note: In a real app, this goes into templates/index.html
-@app.before_first_request
-def create_template():
-    os.makedirs('templates', exist_ok=True)
-    with open('templates/index.html', 'w') as f:
-        f.write('''
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentiment Analysis Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-</head>
-<body class="bg-gray-50 min-h-screen">
-    <nav class="bg-blue-600 p-4 text-white shadow-lg">
-        <div class="container mx-auto flex items-center">
-            <i class="fas fa-brain mr-3 text-2xl"></i>
-            <h1 class="text-xl font-bold">Analisis Sentimen Multi-Model</h1>
-        </div>
-    </nav>
-
-    <div class="container mx-auto py-8 px-4">
-        <div class="max-w-4xl mx-auto">
-            <!-- Input Section -->
-            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
-                <h2 class="text-lg font-semibold mb-4 text-gray-700">Input Teks Berita / Opini Ekonomi</h2>
-                <form method="POST">
-                    <textarea 
-                        name="text_input" 
-                        rows="4" 
-                        class="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                        placeholder="Masukkan teks di sini..."
-                    >{{ input_text }}</textarea>
-                    <button type="submit" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition flex items-center">
-                        <i class="fas fa-search mr-2"></i> Analisis Sekarang
-                    </button>
-                </form>
-            </div>
-
-            {% if steps %}
-            <!-- Preprocessing Steps -->
-            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
-                <h2 class="text-lg font-semibold mb-4 text-gray-700"><i class="fas fa-cogs mr-2 text-blue-500"></i> Alur Preprocessing</h2>
-                <div class="space-y-3">
-                    {% for step in steps %}
-                    <div class="flex items-start">
-                        <div class="flex-shrink-0 h-6 w-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold mt-1">
-                            {{ loop.index }}
+                    st.markdown(f"""
+                        <div style="background-color:{bg_color}; padding:20px; border-radius:10px; border: 1px solid {text_color}; margin-bottom:10px">
+                            <h4 style="color:black; margin-top:0">{nama_model}</h4>
+                            <h2 style="color:{text_color}; margin:10px 0">{hasil.upper()}</h2>
+                            <p style="color:#444; font-size:0.9rem">{beri_penjelasan(hasil)}</p>
                         </div>
-                        <div class="ml-4">
-                            <p class="text-sm font-bold text-gray-600">{{ step.step }}</p>
-                            <p class="text-sm text-gray-500 italic">"{{ step.result }}"</p>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+                    """, unsafe_allow_html=True)
+                else:
+                    st.error(f"Model {nama_model} tidak tersedia.")
 
-            {% if results %}
-            <!-- Results Cards -->
-            <h2 class="text-xl font-bold mb-6 text-gray-800">Hasil Perbandingan Model</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {% for res in results %}
-                <div class="bg-white rounded-xl shadow-md border-t-4 {% if res.sentiment == 'positif' %}border-green-500{% elif res.sentiment == 'negatif' %}border-red-500{% else %}border-gray-400{% endif %} p-6">
-                    <div class="flex justify-between items-start mb-4">
-                        <h3 class="font-bold text-gray-700">{{ res.model }}</h3>
-                        <span class="px-3 py-1 rounded-full text-xs font-bold uppercase 
-                            {% if res.sentiment == 'positif' %}bg-green-100 text-green-700{% elif res.sentiment == 'negatif' %}bg-red-100 text-red-700{% else %}bg-gray-100 text-gray-700{% endif %}">
-                            {{ res.sentiment }}
-                        </span>
-                    </div>
-                    <p class="text-sm text-gray-600 mb-4">{{ res.explanation }}</p>
-                    <div class="text-xs text-gray-400 flex items-center">
-                        <i class="fas fa-check-circle mr-1"></i> {{ res.confidence }}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-    </div>
-    
-    <footer class="mt-12 py-6 bg-gray-100 text-center text-gray-500 text-sm">
-        <p>&copy; 2024 Analisis Sentimen Ekonomi - Naive Bayes & SVM Comparison</p>
-    </footer>
-</body>
-</html>
-        ''')
-
-if __name__ == '__main__':
-    app.run(debug=True)
+st.sidebar.info("""
+**Tentang Aplikasi:**
+- **Model:** Naive Bayes & SVM
+- **Tuning:** Grid Search CV
+- **Preprocessing:** Sastrawi & Custom Cleaning
+""")
