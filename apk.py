@@ -388,7 +388,74 @@ with st.expander("📋 Analisis Batch (banyak teks sekaligus)", expanded=False):
                 file_name="hasil_sentimen.csv",
                 mime="text/csv",
             )
+# Tambahkan bagian ini setelah section "ANALISIS BATCH"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# UPLOAD & ANALISIS CSV
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+with st.expander("📁 Upload File CSV", expanded=False):
+    st.markdown(
+        "Upload file CSV dengan kolom berisi teks yang ingin dianalisis. "
+        "Format: CSV dengan minimal satu kolom teks."
+    )
+    
+    uploaded_file = st.file_uploader(
+        "Pilih file CSV:",
+        type=["csv"],
+        help="File CSV dengan kolom teks untuk dianalisis"
+    )
+    
+    if uploaded_file is not None:
+        import pandas as pd
+        
+        try:
+            df_upload = pd.read_csv(uploaded_file)
+            st.markdown(f"**📊 File berhasil dimuat** ({len(df_upload)} baris)")
+            
+            # Pilih kolom
+            column_name = st.selectbox(
+                "Pilih kolom yang berisi teks:",
+                options=df_upload.columns
+            )
+            
+            if st.button("🔍 Analisis CSV", use_container_width=True):
+                rows = []
+                progress_bar = st.progress(0)
+                
+                with st.spinner(f"Menganalisis {len(df_upload)} teks..."):
+                    for idx, row in df_upload.iterrows():
+                        text = str(row[column_name]).strip()
+                        if text:
+                            lbl, cf, ct, _ = predict_sentiment(text, selected_model)
+                            if lbl:
+                                rows.append({
+                                    "Teks Asli": text,
+                                    "Teks Bersih": ct,
+                                    "Sentimen": lbl.capitalize(),
+                                })
+                        progress_bar.progress((idx + 1) / len(df_upload))
+                
+                if rows:
+                    df_result = pd.DataFrame(rows)
+                    st.dataframe(df_result, use_container_width=True)
+                    
+                    # Statistik
+                    st.markdown("#### 📈 Statistik Hasil")
+                    dist = df_result["Sentimen"].value_counts()
+                    st.bar_chart(dist)
+                    
+                    # Download hasil
+                    csv = df_result.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        "⬇️ Download Hasil (CSV)",
+                        data=csv,
+                        file_name="hasil_analisis_csv.csv",
+                        mime="text/csv",
+                    )
+        
+        except Exception as e:
+            st.error(f"❌ Error membaca file: {str(e)}")
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
 # ─────────────────────────────────────────────────────────────────────────────
