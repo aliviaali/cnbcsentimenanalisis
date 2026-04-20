@@ -8,6 +8,9 @@
 import pickle
 import time
 import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
 from preprocessing import preprocess
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,6 +67,23 @@ st.markdown("""
 
 /* Confidence bar labels */
 .conf-label { font-size: 0.85rem; color: #555; margin-bottom: 2px; }
+
+/* Sentiment gauge container */
+.sentiment-gauge-container {
+    display: flex;
+    justify-content: space-around;
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.sentiment-gauge-item {
+    flex: 1;
+    text-align: center;
+    padding: 1rem;
+    border-radius: 10px;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,9 +121,9 @@ models, tfidf = load_models()
 
 # Emoji & warna per kelas
 SENTIMENT_META = {
-    "positif": {"emoji": "😊", "label": "POSITIF", "css": "positif"},
-    "netral" : {"emoji": "😐", "label": "NETRAL",  "css": "netral"},
-    "negatif": {"emoji": "😞", "label": "NEGATIF", "css": "negatif"},
+    "positif": {"emoji": "😊", "label": "POSITIF", "css": "positif", "color": "#66BB6A"},
+    "netral" : {"emoji": "😐", "label": "NETRAL",  "css": "netral", "color": "#90A4AE"},
+    "negatif": {"emoji": "😞", "label": "NEGATIF", "css": "negatif", "color": "#EF5350"},
 }
 LABEL_MAP     = {0: "negatif", 1: "netral", 2: "positif"}
 MODEL_ICONS   = {
@@ -244,14 +264,14 @@ def predict_sentiment(text: str, model_name: str):
     X_vec = tfidf.transform([clean_text])
 
     # Prediksi
-    pred_int = model.predict(X_vec)[0]
+    pred_int = model.predict(X_vec)
     label    = LABEL_MAP[pred_int]
 
     # Confidence (decision_function atau predict_proba)
     conf = {}
     try:
         # LinearSVC → decision_function (bukan probabilitas)
-        df_scores = model.decision_function(X_vec)[0]
+        df_scores = model.decision_function(X_vec)
         # Softmax normalization untuk visualisasi
         import numpy as np
         exp_s = [float(x) for x in df_scores]
@@ -265,7 +285,7 @@ def predict_sentiment(text: str, model_name: str):
     except AttributeError:
         pass
     try:
-        proba = model.predict_proba(X_vec)[0]
+        proba = model.predict_proba(X_vec)
         conf  = {LABEL_MAP[i]: round(float(p) * 100, 1) for i, p in enumerate(proba)}
     except AttributeError:
         pass
@@ -300,16 +320,52 @@ if analyze_btn and user_input.strip():
             unsafe_allow_html=True,
         )
 
-        # Confidence score
+        # Confidence score dengan Grafik Pie Chart
         if conf:
             st.markdown("#### 📊 Skor Kepercayaan Model")
-            order = ["positif", "netral", "negatif"]
-            bar_colors = {"positif": "#66BB6A", "netral": "#90A4AE", "negatif": "#EF5350"}
-            for cls in order:
-                score = conf.get(cls, 0)
-                st.markdown(f"<div class='conf-label'>{cls.capitalize()} — {score:.1f}%</div>",
-                            unsafe_allow_html=True)
-                st.progress(min(score / 100, 1.0))
+            
+            # Buat 2 kolom: Pie Chart + Progress Bars
+            col_chart, col_bars = st.columns([1.2, 1])
+            
+            with col_chart:
+                # Pie Chart dengan Plotly
+                sentiments = list(conf.keys())
+                scores = list(conf.values())
+                colors_list = [SENTIMENT_META[s] ["color"] for s in sentiments]
+                
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=[s.capitalize() for s in sentiments],
+                    values=scores,
+                    marker=dict(colors=colors_list),
+                    textposition='inside',
+                    textinfo='label+percent',
+                    hovertemplate='<b>%{label}</b><br>Skor: %{value:.1f}%<extra></extra>',
+                )])
+                
+                fig_pie.update_layout(
+                    height=300,
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    showlegend=False,
+                    font=dict(size=11),
+                )
+                
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col_bars:
+                # Progress bars vertikal
+                st.markdown("**Persentase:**")
+                order = ["positif", "netral", "negatif"]
+                for cls in order:
+                    score = conf.get(cls, 0)
+                    color = SENTIMENT_META[cls] ["color"]
+                    st.markdown(
+                        f"<div class='conf-label'>"
+                        f"<span style='color:{color}; font-weight:bold;'>"
+                        f"{cls.capitalize()}</span> — {score:.1f}%"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.progress(min(score / 100, 1.0))
 
         # Teks setelah preprocessing
         if show_preprocess:
@@ -345,7 +401,7 @@ st.markdown("---")
 with st.expander("📋 Analisis Batch (banyak teks sekaligus)", expanded=False):
     st.markdown(
         "Masukkan beberapa judul berita, **satu judul per baris**. "
-        "Hasil akan ditampilkan dalam tabel."
+        "Hasil akan ditampilkan dalam tabel dan grafik."
     )
     batch_input = st.text_area(
         "Judul berita (satu per baris):",
@@ -359,7 +415,6 @@ with st.expander("📋 Analisis Batch (banyak teks sekaligus)", expanded=False):
     batch_btn = st.button("🔍 Analisis Batch", use_container_width=True)
 
     if batch_btn and batch_input.strip():
-        import pandas as pd
         lines = [l.strip() for l in batch_input.strip().split("\n") if l.strip()]
         rows  = []
         with st.spinner(f"Menganalisis {len(lines)} teks..."):
@@ -376,9 +431,72 @@ with st.expander("📋 Analisis Batch (banyak teks sekaligus)", expanded=False):
             df_result = pd.DataFrame(rows)
             st.dataframe(df_result, use_container_width=True)
 
-            # Distribusi
+            # Distribusi dengan Grafik yang lebih menarik
+            st.markdown("#### 📈 Distribusi Sentimen")
             dist = df_result["Sentimen"].value_counts()
-            st.bar_chart(dist)
+            
+            # Bar Chart dengan Plotly
+            fig_bar = go.Figure(data=[
+                go.Bar(
+                    x=dist.index,
+                    y=dist.values,
+                    marker=dict(
+                        color=[SENTIMENT_META[s.lower()] ["color"] for s in dist.index]
+                    ),
+                    text=dist.values,
+                    textposition='auto',
+                    hovertemplate='<b>%{x}</b><br>Jumlah: %{y}<extra></extra>',
+                )
+            ])
+            
+            fig_bar.update_layout(
+                xaxis_title="Sentimen",
+                yaxis_title="Jumlah Berita",
+                height=350,
+                showlegend=False,
+                hovermode='x unified',
+                margin=dict(l=40, r=40, t=40, b=40),
+            )
+            
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+            # Pie Chart untuk batch
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Persentase Sentimen:**")
+                for sentiment in ["Positif", "Netral", "Negatif"]:
+                    count = len(df_result[df_result["Sentimen"] == sentiment])
+                    pct = (count / len(df_result)) * 100
+                    color = SENTIMENT_META[sentiment.lower()] ["color"]
+                    st.markdown(
+                        f"<div style='padding:0.5rem; margin:0.3rem 0; "
+                        f"background:{color}20; border-left:4px solid {color}; border-radius:4px;'>"
+                        f"<b>{sentiment}</b>: {count} ({pct:.1f}%)"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+            
+            with col2:
+                # Donut Chart
+                fig_donut = go.Figure(data=[go.Pie(
+                    labels=[s.capitalize() for s in dist.index],
+                    values=dist.values,
+                    hole=0.4,
+                    marker=dict(
+                        colors=[SENTIMENT_META[s.lower()] ["color"] for s in dist.index]
+                    ),
+                    textposition='inside',
+                    textinfo='label+percent',
+                    hovertemplate='<b>%{label}</b><br>Jumlah: %{value}<extra></extra>',
+                )])
+                
+                fig_donut.update_layout(
+                    height=300,
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    showlegend=False,
+                )
+                
+                st.plotly_chart(fig_donut, use_container_width=True)
 
             # Download CSV
             csv = df_result.to_csv(index=False).encode("utf-8")
