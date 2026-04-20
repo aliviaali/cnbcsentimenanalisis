@@ -1,176 +1,403 @@
-import streamlit as st
+# app.py
+# =============================================================================
+# Streamlit App — Sentiment Analysis Berita CNBC Indonesia
+# Model  : Naive Bayes | SVM | Naive Bayes Optimized | SVM Optimized
+# Deploy : streamlit run app.py
+# =============================================================================
+
 import pickle
-import re
-import pandas as pd
-import sys
+import time
+import streamlit as st
+from preprocessing import preprocess
 
-# --- SOLUSI ERROR: module 'main' has no attribute 'clean_text' ---
-# Pickle memerlukan fungsi/class yang sama dengan saat model dibuat.
-# Kita definisikan fungsi dummy agar pickle bisa melakukan unpickling dengan lancar.
-def clean_text(text):
-    return text
-
-# Daftarkan ke module main
-sys.modules['__main__'].clean_text = clean_text
-
-# --- Konfigurasi Halaman ---
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Sentimen Analisis CNBC",
-    page_icon="🚀",
-    layout="wide"
+    page_title="Sentiment Analysis — CNBC Indonesia",
+    page_icon="📰",
+    layout="centered",
+    initial_sidebar_state="expanded",
 )
 
-# --- Fungsi Load Model & Tools ---
-@st.cache_resource
-def load_assets():
-    # Gunakan nama file sesuai struktur folder Anda
-    file_names = {
-        'tfidf': 'tfidf (2).pkl',
-        'tools': 'preprocessing_tools (1).pkl',
-        'nb_base': 'nb_baseline (2).pkl',
-        'nb_opt': 'nb_optimized (2).pkl',
-        'svm_base': 'svm_baseline (2).pkl',
-        'svm_opt': 'svm_optimized (2).pkl'
-    }
-    
-    assets = {}
-    
-    # Validasi instalasi library
-    try:
-        import sklearn
-        from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
-    except ImportError as e:
-        st.error(f"Library penting tidak ditemukan: {e}")
-        st.info("Pastikan file requirements.txt Anda berisi: streamlit, scikit-learn, PySastrawi, pandas")
-        return None
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM CSS
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Card hasil prediksi */
+.result-card {
+    padding: 1.4rem 1.8rem;
+    border-radius: 14px;
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+.positif  { background: #E8F5E9; color: #2E7D32; border: 2px solid #66BB6A; }
+.negatif  { background: #FFEBEE; color: #B71C1C; border: 2px solid #EF5350; }
+.netral   { background: #ECEFF1; color: #37474F; border: 2px solid #90A4AE; }
 
-    for key, name in file_names.items():
+/* Badge model */
+.model-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: #1565C0;
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+/* Pre-processed text box */
+.preprocess-box {
+    background: #F5F5F5;
+    border-left: 4px solid #1565C0;
+    padding: 0.7rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #333;
+    word-break: break-word;
+}
+
+/* Confidence bar labels */
+.conf-label { font-size: 0.85rem; color: #555; margin-bottom: 2px; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOAD MODELS (cached)
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner="Memuat model...")
+def load_models():
+    """Load semua model dan TF-IDF vectorizer dari file .pkl"""
+    models = {}
+    files = {
+        "Naive Bayes"          : "naive_bayes.pkl",
+        "SVM"                  : "svm.pkl",
+        "Naive Bayes Optimized": "naive_bayes_optimized.pkl",
+        "SVM Optimized"        : "svm_optimized.pkl",
+    }
+    for name, path in files.items():
         try:
-            with open(name, 'rb') as f:
-                # Gunakan pickle.load secara langsung
-                assets[key] = pickle.load(f)
+            with open(path, "rb") as f:
+                models[name] = pickle.load(f)
         except FileNotFoundError:
-            st.warning(f"File {name} tidak ditemukan.")
-            assets[key] = None
-        except Exception as e:
-            # Jika invalid load key terjadi, beri peringatan spesifik
-            st.error(f"Gagal memuat {name}: {e}")
-            st.info(f"Tips: Pastikan file {name} tidak korup dan versi scikit-learn sesuai.")
-            assets[key] = None
-    return assets
+            models[name] = None
 
-# Memuat aset
-assets = load_assets()
+    try:
+        with open("tfidf.pkl", "rb") as f:
+            tfidf = pickle.load(f)
+    except FileNotFoundError:
+        tfidf = None
 
-if assets:
-    tfidf = assets.get('tfidf')
-    tools = assets.get('tools')
-    models = {
-        'Naive Bayes (Baseline)': assets.get('nb_base'),
-        'Naive Bayes (Optimized)': assets.get('nb_opt'),
-        'SVM (Baseline)': assets.get('svm_base'),
-        'SVM (Optimized)': assets.get('svm_opt')
-    }
+    return models, tfidf
 
-    # Ambil tools dari pkl (stopword & stemmer)
-    stemmer = tools.get('stemmer') if tools else None
-    stopword_remover = tools.get('stopword_remover') if tools else None
 
-    def preprocess_text(text):
-        steps = []
-        steps.append({"tahap": "Teks Asli", "hasil": text})
-        
-        # Cleaning & Case Folding
-        clean = text.lower()
-        # Menghapus karakter selain huruf dan spasi
-        clean = re.sub(r'[^a-zA-Z\s]', ' ', clean)
-        # Menghapus spasi ganda
-        clean = re.sub(r'\s+', ' ', clean).strip()
-        steps.append({"tahap": "Cleaning & Case Folding", "hasil": clean})
-        
-        # Tokenizing (Preview)
-        tokens = clean.split()
-        steps.append({"tahap": "Tokenizing", "hasil": str(tokens)})
-        
-        # Stopword Removal
-        if stopword_remover:
-            try:
-                clean = stopword_remover.remove(clean)
-                steps.append({"tahap": "Stopword Removal", "hasil": clean})
-            except:
-                pass
-        
-        # Stemming
-        if stemmer:
-            try:
-                clean = stemmer.stem(clean)
-                steps.append({"tahap": "Stemming (Sastrawi)", "hasil": clean})
-            except:
-                pass
-            
-        return clean, steps
+models, tfidf = load_models()
 
-    def beri_penjelasan(label):
-        label_lower = str(label).lower()
-        if 'positif' in label_lower:
-            return "Teks ini dikategorikan **Positif** karena mengandung istilah yang diasosiasikan dengan pertumbuhan ekonomi atau sentimen pasar yang baik."
-        elif 'negatif' in label_lower:
-            return "Teks ini dikategorikan **Negatif** karena model mendeteksi kata kunci terkait penurunan harga atau kerugian emiten."
-        else:
-            return "Teks ini dikategorikan **Netral** karena bersifat informatif tanpa muatan emosional yang signifikan."
+# Emoji & warna per kelas
+SENTIMENT_META = {
+    "positif": {"emoji": "😊", "label": "POSITIF", "css": "positif"},
+    "netral" : {"emoji": "😐", "label": "NETRAL",  "css": "netral"},
+    "negatif": {"emoji": "😞", "label": "NEGATIF", "css": "negatif"},
+}
+LABEL_MAP     = {0: "negatif", 1: "netral", 2: "positif"}
+MODEL_ICONS   = {
+    "Naive Bayes"          : "🔵",
+    "SVM"                  : "🟠",
+    "Naive Bayes Optimized": "🟢",
+    "SVM Optimized"        : "🔴",
+}
+MODEL_DESC = {
+    "Naive Bayes"          : "Model probabilistik berbasis Teorema Bayes dengan alpha=1.0.",
+    "SVM"                  : "Linear SVC dengan C=1.0 dan fitur TF-IDF N-gram (1,2).",
+    "Naive Bayes Optimized": "Naive Bayes dengan alpha optimal hasil GridSearchCV 10-Fold.",
+    "SVM Optimized"        : "LinearSVC dengan C optimal hasil GridSearchCV 10-Fold.",
+}
 
-    # --- Tampilan Dashboard ---
-    st.title("📊 Dashboard Analisis Sentimen Multi-Model")
-    st.markdown("Bandingkan hasil prediksi sentimen teks ekonomi antara model **Naive Bayes** dan **SVM**.")
 
-    input_user = st.text_area("Input Berita / Opini Ekonomi:", height=150)
+# ─────────────────────────────────────────────────────────────────────────────
+# SIDEBAR
+# ─────────────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.image(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/CNBC_logo.svg/"
+        "320px-CNBC_logo.svg.png",
+        width=130,
+    )
+    st.title("⚙️ Pengaturan")
+    st.markdown("---")
 
-    if st.button("Mulai Analisis"):
-        if not input_user.strip():
-            st.warning("Silakan masukkan teks terlebih dahulu.")
-        elif not tfidf:
-            st.error("Vectorizer TF-IDF tidak tersedia. Pastikan file tfidf (2).pkl sudah benar dan tidak korup.")
-        else:
-            with st.spinner('Sedang memproses teks...'):
-                clean_text, alur_proses = preprocess_text(input_user)
-                
-                # Tampilkan Alur Preprocessing
-                st.subheader("🔍 Alur Kerja Preprocessing")
-                for i, step in enumerate(alur_proses):
-                    with st.expander(f"Langkah {i+1}: {step['tahap']}"):
-                        st.info(step['hasil'])
-                
-                st.divider()
-                st.subheader("🎯 Hasil Prediksi Perbandingan")
-                
-                try:
-                    # Vectorization
-                    vec = tfidf.transform([clean_text])
-                    
-                    # Grid hasil
-                    cols = st.columns(2)
-                    for i, (nama, model) in enumerate(models.items()):
-                        with cols[i % 2]:
-                            if model:
-                                try:
-                                    hasil = model.predict(vec)[0]
-                                    # Warna Kartu
-                                    label_str = str(hasil).lower()
-                                    bg = "#d1fae5" if 'positif' in label_str else "#fee2e2" if 'negatif' in label_str else "#f3f4f6"
-                                    border = "#065f46" if 'positif' in label_str else "#991b1b" if 'negatif' in label_str else "#374151"
-                                    
-                                    st.markdown(f"""
-                                        <div style="background-color:{bg}; padding:25px; border-radius:12px; border: 2px solid {border}; margin-bottom:20px">
-                                            <h4 style="color:black; margin-top:0">{nama}</h4>
-                                            <h2 style="color:{border}; margin:10px 0">{str(hasil).upper()}</h2>
-                                            <p style="color:#333; font-size:0.9rem">{beri_penjelasan(hasil)}</p>
-                                        </div>
-                                    """, unsafe_allow_html=True)
-                                except Exception as e:
-                                    st.error(f"Gagal prediksi dengan {nama}: {e}")
-                            else:
-                                st.error(f"Model {nama} tidak dapat digunakan.")
-                except Exception as e:
-                    st.error(f"Gagal melakukan transformasi TF-IDF: {e}")
-else:
-    st.error("Aplikasi terhenti: Library atau File Model tidak lengkap atau tidak valid.")
+    # Pilihan model
+    selected_model = st.selectbox(
+        "🤖 Pilih Model",
+        options=list(models.keys()),
+        format_func=lambda x: f"{MODEL_ICONS[x]}  {x}",
+    )
+
+    st.markdown(f"<small>📄 {MODEL_DESC[selected_model]}</small>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Opsi tampilkan preprocessing
+    show_preprocess = st.toggle("Tampilkan hasil preprocessing", value=True)
+    show_steps      = st.toggle("Tampilkan langkah-langkah preprocessing", value=False)
+
+    st.markdown("---")
+    st.markdown("### 📊 Status Model")
+    for name, mdl in models.items():
+        icon = "✅" if mdl is not None else "❌"
+        st.markdown(f"{icon} `{name}`")
+    tfidf_status = "✅" if tfidf is not None else "❌"
+    st.markdown(f"{tfidf_status} `TF-IDF Vectorizer`")
+
+    st.markdown("---")
+    st.caption("Dataset: CNBC Indonesia News\n9.819 judul berita\n(positif / netral / negatif)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────────────────────
+st.title("📰 Analisis Sentimen Berita")
+st.markdown(
+    "Masukkan judul berita berbahasa Indonesia untuk dianalisis sentimennya "
+    "menggunakan model **Machine Learning** berbasis **TF-IDF N-gram (1,2)**."
+)
+
+# ── Input teks ────────────────────────────────────────────────────────────────
+user_input = st.text_area(
+    label="✏️ Judul Berita",
+    placeholder="Contoh: Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
+    height=110,
+    help="Masukkan satu atau beberapa kalimat judul berita berbahasa Indonesia.",
+)
+
+# ── Contoh cepat ─────────────────────────────────────────────────────────────
+st.markdown("**🔖 Coba contoh cepat:**")
+col1, col2, col3 = st.columns(3)
+example_texts = {
+    "😊 Positif": "Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
+    "😞 Negatif": "Garuda Indonesia Rugi Rp 2,4 Triliun, Saham Anjlok 15%",
+    "😐 Netral" : "OJK Rilis Aturan Baru Terkait Investasi Reksa Dana 2024",
+}
+with col1:
+    if st.button("😊 Contoh Positif", use_container_width=True):
+        user_input = example_texts["😊 Positif"]
+        st.session_state["quick_input"] = user_input
+with col2:
+    if st.button("😞 Contoh Negatif", use_container_width=True):
+        user_input = example_texts["😞 Negatif"]
+        st.session_state["quick_input"] = user_input
+with col3:
+    if st.button("😐 Contoh Netral", use_container_width=True):
+        user_input = example_texts["😐 Netral"]
+        st.session_state["quick_input"] = user_input
+
+# Gunakan session state untuk quick input
+if "quick_input" in st.session_state and not user_input:
+    user_input = st.session_state["quick_input"]
+
+# ── Tombol Analisis ───────────────────────────────────────────────────────────
+analyze_btn = st.button("🔍 Analisis Sentimen", type="primary", use_container_width=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FUNGSI PREDIKSI
+# ─────────────────────────────────────────────────────────────────────────────
+def predict_sentiment(text: str, model_name: str):
+    """
+    Melakukan prediksi sentimen:
+    1. Preprocessing teks
+    2. Transformasi TF-IDF
+    3. Prediksi dengan model yang dipilih
+    Mengembalikan: (label_str, confidence_dict, clean_text, steps_dict)
+    """
+    if tfidf is None:
+        return None, None, None, None
+
+    model = models[model_name]
+    if model is None:
+        return None, None, None, None
+
+    # Rekam tiap langkah preprocessing
+    from preprocessing import (
+        case_folding, cleaning, tokenization,
+        stopword_removal, stemming,
+    )
+    steps = {}
+    t1 = case_folding(text)
+    steps["1. Case Folding"] = t1
+    t2 = cleaning(t1)
+    steps["2. Cleaning"] = t2
+    t3 = tokenization(t2)
+    steps["3. Tokenization"] = t3
+    t4 = stopword_removal(t3)
+    steps["4. Stopword Removal"] = t4
+    t5 = stemming(t4)
+    steps["5. Stemming"] = t5
+    clean_text = " ".join(t5)
+
+    # TF-IDF transform
+    X_vec = tfidf.transform([clean_text])
+
+    # Prediksi
+    pred_int = model.predict(X_vec)[0]
+    label    = LABEL_MAP[pred_int]
+
+    # Confidence (decision_function atau predict_proba)
+    conf = {}
+    try:
+        # LinearSVC → decision_function (bukan probabilitas)
+        df_scores = model.decision_function(X_vec)[0]
+        # Softmax normalization untuk visualisasi
+        import numpy as np
+        exp_s = [float(x) for x in df_scores]
+        min_s = min(exp_s)
+        shifted = [x - min_s for x in exp_s]
+        total = sum(shifted) + 1e-9
+        conf = {
+            LABEL_MAP[i]: round(shifted[i] / total * 100, 1)
+            for i in range(len(shifted))
+        }
+    except AttributeError:
+        pass
+    try:
+        proba = model.predict_proba(X_vec)[0]
+        conf  = {LABEL_MAP[i]: round(float(p) * 100, 1) for i, p in enumerate(proba)}
+    except AttributeError:
+        pass
+
+    return label, conf, clean_text, steps
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HASIL PREDIKSI
+# ─────────────────────────────────────────────────────────────────────────────
+if analyze_btn and user_input.strip():
+    with st.spinner("Menganalisis..."):
+        time.sleep(0.4)   # UX: beri kesan proses
+        label, conf, clean_text, steps = predict_sentiment(user_input.strip(), selected_model)
+
+    if label is None:
+        st.error(
+            "❌ Model atau TF-IDF belum dimuat. "
+            "Pastikan semua file .pkl sudah ada di direktori yang sama dengan app.py."
+        )
+    else:
+        meta = SENTIMENT_META[label]
+        st.markdown("---")
+        st.markdown(f"<div class='model-badge'>{MODEL_ICONS[selected_model]} {selected_model}</div>",
+                    unsafe_allow_html=True)
+
+        # Kartu hasil
+        st.markdown(
+            f"<div class='result-card {meta['css']}'>"
+            f"{meta['emoji']}  Sentimen: {meta['label']}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Confidence score
+        if conf:
+            st.markdown("#### 📊 Skor Kepercayaan Model")
+            order = ["positif", "netral", "negatif"]
+            bar_colors = {"positif": "#66BB6A", "netral": "#90A4AE", "negatif": "#EF5350"}
+            for cls in order:
+                score = conf.get(cls, 0)
+                st.markdown(f"<div class='conf-label'>{cls.capitalize()} — {score:.1f}%</div>",
+                            unsafe_allow_html=True)
+                st.progress(min(score / 100, 1.0))
+
+        # Teks setelah preprocessing
+        if show_preprocess:
+            st.markdown("#### 🧹 Teks Setelah Preprocessing")
+            clean_display = clean_text if clean_text.strip() else "_(teks kosong setelah preprocessing)_"
+            st.markdown(
+                f"<div class='preprocess-box'>{clean_display}</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Detail langkah preprocessing
+        if show_steps and steps:
+            st.markdown("#### 🔬 Detail Langkah Preprocessing")
+            with st.expander("Lihat tiap langkah", expanded=True):
+                for step_name, result in steps.items():
+                    st.markdown(f"**{step_name}**")
+                    if isinstance(result, list):
+                        st.code(str(result), language="python")
+                    else:
+                        st.markdown(
+                            f"<div class='preprocess-box'>{result}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+elif analyze_btn and not user_input.strip():
+    st.warning("⚠️ Silakan masukkan teks terlebih dahulu.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ANALISIS BATCH
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+with st.expander("📋 Analisis Batch (banyak teks sekaligus)", expanded=False):
+    st.markdown(
+        "Masukkan beberapa judul berita, **satu judul per baris**. "
+        "Hasil akan ditampilkan dalam tabel."
+    )
+    batch_input = st.text_area(
+        "Judul berita (satu per baris):",
+        height=160,
+        placeholder=(
+            "Garuda Indonesia Rugi Rp 2,4 Triliun\n"
+            "Bank BRI Laba Tumbuh 18%\n"
+            "OJK Rilis Aturan Baru Reksa Dana"
+        ),
+    )
+    batch_btn = st.button("🔍 Analisis Batch", use_container_width=True)
+
+    if batch_btn and batch_input.strip():
+        import pandas as pd
+        lines = [l.strip() for l in batch_input.strip().split("\n") if l.strip()]
+        rows  = []
+        with st.spinner(f"Menganalisis {len(lines)} teks..."):
+            for line in lines:
+                lbl, cf, ct, _ = predict_sentiment(line, selected_model)
+                if lbl:
+                    rows.append({
+                        "Judul Berita"     : line,
+                        "Teks Bersih"      : ct,
+                        "Sentimen"         : lbl.capitalize(),
+                    })
+
+        if rows:
+            df_result = pd.DataFrame(rows)
+            st.dataframe(df_result, use_container_width=True)
+
+            # Distribusi
+            dist = df_result["Sentimen"].value_counts()
+            st.bar_chart(dist)
+
+            # Download CSV
+            csv = df_result.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Download Hasil (CSV)",
+                data=csv,
+                file_name="hasil_sentimen.csv",
+                mime="text/csv",
+            )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown(
+    "<div style='text-align:center; color:#999; font-size:0.8rem;'>"
+    "Sentiment Analysis · Dataset CNBCI · "
+    "Preprocessing: Sastrawi · TF-IDF N-gram (1,2) · "
+    "Model: Naive Bayes &amp; SVM"
+    "</div>",
+    unsafe_allow_html=True,
+)
