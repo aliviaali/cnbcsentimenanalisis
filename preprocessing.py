@@ -26,7 +26,20 @@ EXCLUDE_FROM_STOPWORDS = {
     "baik", "buruk", "kuat", "lemah",
     # Kata keuangan umum
     "saham", "ihsg", "rupiah", "dolar", "inflasi", "deflasi",
-    "suku", "bunga", "investasi", "ekspor", "impor",
+    "suku", "bunga", "investasi", "ekspor", "impor", "reksa", "dana",
+    # Kata temporal & konteks (dari contoh uji)
+    "mulai", "bulan", "depan", "hari", "minggu", "tahun", "kuartal",
+    "setelah", "sebelum", "saat", "ketika", "sementara",
+    # Kata terkait berita & laporan
+    "rilis", "aturan", "laporan", "efektif", "terkait", "ojk",
+    # Organisasi & institusi
+    "bank", "bri", "garuda", "indonesia", "cnbc",
+    # Kata aksi & status
+    "catat", "cetak", "catatkan", "raih", "capai", "peroleh",
+    # Kata tambahan untuk sentimen
+    "kuat", "lemah", "solid", "rapuh", "sehat", "sakit",
+    # Angka & kuantitas (jika ada setelah cleaning)
+    "persen", "persen", "triliun", "miliar", "juta",
 }
 
 # Stopword final = base stopwords DIKURANGI kata penting
