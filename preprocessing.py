@@ -1,98 +1,77 @@
 # preprocessing.py
-# =============================================================================
-# Modul preprocessing teks Bahasa Indonesia
-# Digunakan oleh: sentiment_analysis_colab.py  &  app.py (Streamlit)
-# =============================================================================
 
 import re
+import string
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
 
+# ── Inisialisasi Sastrawi ─────────────────────────────────────────────────────
+stemmer_factory  = StemmerFactory()
+stemmer          = stemmer_factory.create_stemmer()
 
-# ─── Inisialisasi (lazy singleton agar tidak reload tiap call) ───────────────
-_stemmer      = None
-_stopword_set = None
+stopword_factory = StopWordRemoverFactory()
+base_stopwords   = set(stopword_factory.get_stop_words())
 
+# ── Kata yang HARUS dikecualikan dari stopword (penting untuk berita keuangan) ─
+EXCLUDE_FROM_STOPWORDS = {
+    # Arah / perubahan
+    "naik", "turun", "anjlok", "melonjak", "merosot", "tumbuh",
+    "meningkat", "menurun", "stagnan", "rebound", "koreksi",
+    # Kondisi keuangan
+    "laba", "rugi", "untung", "defisit", "surplus", "bangkrut",
+    "pailit", "likuid", "solven",
+    # Kata penting konteks
+    "baru", "perdana", "pertama", "terakhir", "terbesar", "terkecil",
+    "tertinggi", "terendah", "rekor", "normal", "positif", "negatif",
+    "baik", "buruk", "kuat", "lemah",
+    # Kata keuangan umum
+    "saham", "ihsg", "rupiah", "dolar", "inflasi", "deflasi",
+    "suku", "bunga", "investasi", "ekspor", "impor",
+}
 
-def _get_stemmer():
-    global _stemmer
-    if _stemmer is None:
-        _stemmer = StemmerFactory().create_stemmer()
-    return _stemmer
-
-
-def _get_stopwords():
-    global _stopword_set
-    if _stopword_set is None:
-        base = set(StopWordRemoverFactory().get_stop_words())
-        custom = {
-            # Partikel informal
-            "yuk", "nih", "sih", "deh", "dong", "kok", "loh", "lah", "kan",
-            # Singkatan dokumen
-            "tsb", "svp", "ybs", "dkk", "dll", "dsb", "dst",
-            # Noise domain berita
-            "cnbc", "foto", "video", "baca", "simak", "lihat", "klik",
-            "artikel", "berita", "news", "breaking", "update", "terkini",
-            "diketahui", "tersebut",
-            # Nama hari & bulan (tidak membawa makna sentimen)
-            "senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu",
-            "januari", "februari", "maret", "april", "mei", "juni",
-            "juli", "agustus", "september", "oktober", "november", "desember",
-        }
-        _stopword_set = base | custom
-    return _stopword_set
+# Stopword final = base stopwords DIKURANGI kata penting
+CUSTOM_STOPWORDS = base_stopwords - EXCLUDE_FROM_STOPWORDS
 
 
-# ─── Langkah-langkah preprocessing ─────────────────────────────────────────
+# ── Fungsi Preprocessing ──────────────────────────────────────────────────────
 
 def case_folding(text: str) -> str:
-    """Ubah teks ke huruf kecil (lowercase)."""
+    """Mengubah semua huruf menjadi lowercase."""
     return text.lower()
 
 
 def cleaning(text: str) -> str:
-    """
-    Bersihkan teks:
-    - Hapus URL, mention, hashtag
-    - Hapus angka dan satuan persentase
-    - Ganti tanda baca dengan spasi (agar kata tidak tersambung)
-    - Normalkan spasi berlebih
-    """
-    text = re.sub(r"https?://\S+|www\.\S+", " ", text)
-    text = re.sub(r"@\w+|#\w+", " ", text)
-    text = re.sub(r"\d+[.,]?\d*\s*%?", " ", text)
-    text = re.sub(r"[^\w\s]", " ", text)
-    text = re.sub(r"_+", " ", text)
-    text = re.sub(r"\s{2,}", " ", text).strip()
+    """Menghapus angka, tanda baca, dan karakter non-alfabet."""
+    text = re.sub(r'\d+', '', text)                    # hapus angka
+    text = re.sub(r'[^\w\s]', '', text)                # hapus tanda baca
+    text = re.sub(r'_', '', text)                      # hapus underscore
+    text = re.sub(r'\s+', ' ', text).strip()           # normalisasi spasi
     return text
 
 
 def tokenization(text: str) -> list:
-    """Pecah kalimat menjadi token; buang token < 2 karakter."""
-    return [tok for tok in text.split() if len(tok) >= 2]
+    """Memecah teks menjadi list token."""
+    return text.split()
 
 
 def stopword_removal(tokens: list) -> list:
-    """Hapus stopword dari daftar token."""
-    sw = _get_stopwords()
-    return [tok for tok in tokens if tok not in sw]
+    """
+    Menghapus stopword menggunakan kamus custom
+    (Sastrawi base - kata penting keuangan).
+    """
+    return [word for word in tokens if word not in CUSTOM_STOPWORDS]
 
 
 def stemming(tokens: list) -> list:
-    """Ubah setiap token ke bentuk kata dasar (Sastrawi)."""
-    s = _get_stemmer()
-    return [s.stem(tok) for tok in tokens]
+    """Melakukan stemming menggunakan Sastrawi."""
+    return [stemmer.stem(word) for word in tokens]
 
 
 def preprocess(text: str) -> str:
-    """
-    Pipeline lengkap: case_folding → cleaning → tokenization
-                      → stopword_removal → stemming.
-    Mengembalikan string untuk kompatibilitas TfidfVectorizer.
-    """
-    text   = case_folding(text)
-    text   = cleaning(text)
-    tokens = tokenization(text)
-    tokens = stopword_removal(tokens)
-    tokens = stemming(tokens)
-    return " ".join(tokens)
+    """Pipeline lengkap preprocessing, mengembalikan string bersih."""
+    t1 = case_folding(text)
+    t2 = cleaning(t1)
+    t3 = tokenization(t2)
+    t4 = stopword_removal(t3)
+    t5 = stemming(t4)
+    return " ".join(t5)
