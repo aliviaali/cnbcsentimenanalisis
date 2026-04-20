@@ -13,6 +13,8 @@ stopword_factory = StopWordRemoverFactory()
 base_stopwords   = set(stopword_factory.get_stop_words())
 
 # ── Kata yang HARUS dikecualikan dari stopword (penting untuk berita keuangan) ─
+# preprocessing.py
+
 EXCLUDE_FROM_STOPWORDS = {
     # Arah / perubahan
     "naik", "turun", "anjlok", "melonjak", "merosot", "tumbuh",
@@ -27,19 +29,19 @@ EXCLUDE_FROM_STOPWORDS = {
     # Kata keuangan umum
     "saham", "ihsg", "rupiah", "dolar", "inflasi", "deflasi",
     "suku", "bunga", "investasi", "ekspor", "impor", "reksa", "dana",
-    # Kata temporal & konteks (dari contoh uji)
-    "mulai", "bulan", "depan", "hari", "minggu", "tahun", "kuartal",
-    "setelah", "sebelum", "saat", "ketika", "sementara",
-    # Kata terkait berita & laporan
-    "rilis", "aturan", "laporan", "efektif", "terkait", "ojk",
+    # Kata temporal & konteks
+    "mulai", "bulan", "depan", "hari", "minggu", "tahun", "kuartal",  # ← TAMBAHKAN INI
+    "setelah", "sebelum", "saat", "ketika", "sementara", "terkait", "ojk",
+    "rilis", "aturan", "laporan", "efektif",
     # Organisasi & institusi
     "bank", "bri", "garuda", "indonesia", "cnbc",
     # Kata aksi & status
     "catat", "cetak", "catatkan", "raih", "capai", "peroleh",
     # Kata tambahan untuk sentimen
     "kuat", "lemah", "solid", "rapuh", "sehat", "sakit",
-    # Angka & kuantitas (jika ada setelah cleaning)
-    "persen", "persen", "triliun", "miliar", "juta",
+    "sangat", "amat", "sekali",  # ← TAMBAHKAN INI (kata intensitas)
+    # Angka & kuantitas
+    "persen", "triliun", "miliar", "juta",
 }
 
 # Stopword final = base stopwords DIKURANGI kata penting
