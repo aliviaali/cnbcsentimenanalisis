@@ -249,7 +249,20 @@ def predict_sentiment(text: str, model_name: str):
 
     # Prediksi
     pred_int = model.predict(X_vec)
-    label    = LABEL_MAP[pred_int]
+    
+    # PERBAIKAN: Konversi ke int dan validasi
+    try:
+        pred_int = int(pred_int)  # Konversi numpy int ke Python int
+    except (ValueError, TypeError):
+        st.error(f"❌ Error: Prediksi model tidak valid: {pred_int}")
+        return None, None, None, None
+    
+    # Validasi bahwa pred_int ada di LABEL_MAP
+    if pred_int not in LABEL_MAP:
+        st.error(f"❌ Error: Nilai prediksi {pred_int} tidak dikenali. Nilai valid: 0, 1, 2")
+        return None, None, None, None
+    
+    label = LABEL_MAP[pred_int]
 
     # Confidence (decision_function atau predict_proba)
     conf = {}
@@ -275,7 +288,6 @@ def predict_sentiment(text: str, model_name: str):
         pass
 
     return label, conf, clean_text, steps
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HASIL PREDIKSI
