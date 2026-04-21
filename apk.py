@@ -197,7 +197,7 @@ with col3:
         st.session_state["quick_input"] = user_input
 
 # Gunakan session state untuk quick input
-if "quick_input" in st.session_state and not user_input:
+if "quick_input" in st.session_state:
     user_input = st.session_state["quick_input"]
 
 # ── Tombol Analisis ───────────────────────────────────────────────────────────
