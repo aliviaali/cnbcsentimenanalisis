@@ -1,69 +1,60 @@
-import re
 import string
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
 
-# ── 1. INISIALISASI (Hanya dijalankan sekali) ────────────────────────────────
-stemmer_factory = StemmerFactory()
-stemmer = stemmer_factory.create_stemmer()
+# 1. Inisialisasi
+stemmer = StemmerFactory().create_stemmer()
+base_stopwords = set(StopWordRemoverFactory().get_stop_words())
 
-stopword_factory = StopWordRemoverFactory()
-base_stopwords = set(stopword_factory.get_stop_words())
-
-# ── 2. KAMUS CUSTOM (Untuk membersihkan Rp, PT, dan menjaga kata sentimen) ──
+# 2. Kamus Custom
 ADDITIONAL_STOPWORDS = {
-    "rp", "pt", "tbk", "idr", "usd", "jt", "m", "t", "via", "redaksi", "berita"
+    "rp", "pt", "tbk", "idr", "usd", "jt", "m", "t", "redaksi", 
+    "berita", "halaman", "tersebut", "yakni", "yaitu", "via", "siap"
 }
-
-# Kata penting (Gunakan kata dasar karena difilter setelah stemming)
 EXCLUDE_FROM_STOPWORDS = {
-    "naik", "turun", "anjlok", "rosot", "lonjak", "tumbuh", "tingkat",
-    "laba", "rugi", "untung", "saham", "kuat", "lemah", "sangat", "parah",
-    "triliun", "miliar", "juta", "indonesia", "garuda", "positif", "negatif"
+    "naik", "turun", "anjlok", "melonjak", "merosot", "tumbuh",
+    "tingkat", "laba", "rugi", "untung", "defisit", "surplus",
+    "saham", "rupiah", "dolar", "kuat", "lemah", "sangat", "parah",
+    "triliun", "miliar", "juta", "persen"
 }
 
 CUSTOM_STOPWORDS = (base_stopwords | ADDITIONAL_STOPWORDS) - EXCLUDE_FROM_STOPWORDS
-
-# ── 3. FUNGSI PREPROCESSING (Satu fungsi utama untuk UI/Tombol) ──────────────
-
-def case_folding(text: str) -> str:
-    return text.lower()
+# ── Fungsi-Fungsi yang Diperbaiki ─────────────────────────────────────────────
 
 def cleaning(text: str) -> str:
-    # Ganti tanda baca dengan spasi agar kata tidak menempel
-    text = text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
+    # Hapus URL & Mention (Penting jika data dari Twitter/Social Media)
+    text = re.sub(r'http\S+|www\S+|@\S+', '', text)
     # Hapus angka
-    text = re.sub(r'\d+', ' ', text)
+    text = re.sub(r'\d+', '', text)
+    # Hapus tanda baca (diganti spasi agar kata tidak menempel)
+    text = text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
     # Normalisasi spasi
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def tokenization(text: str) -> list:
-    return text.split()
-
-def stemming(tokens: list) -> list:
-    return [stemmer.stem(word) for word in tokens]
-
-def stopword_removal(tokens: list) -> list:
-    return [word for word in tokens if word not in CUSTOM_STOPWORDS and len(word) > 1]
-
-def preprocess(text: str) -> str:
-    """
-    Pipeline lengkap yang dipanggil oleh tombol UI.
-    Mengembalikan string agar kompatibel dengan model ML.
-    """
-    # Langkah 1-5
-    t1 = case_folding(text)
-    t2 = cleaning(t1)
-    t3 = tokenization(t2)
-    t4 = stemming(t3)           # Stemming dulu
-    t5 = stopword_removal(t4)   # Baru buang stopword
+def preprocess_v2(text: str):
+    # 1. Case Folding
+    text = text.lower()
     
-    return " ".join(t5)
+    # 2. Cleaning
+    text = cleaning(text)
+    
+     # 3. Tokenization & 4. Stemming (Digabung agar efisien)
+    # Kita stem dulu SEMUA kata
+    raw_tokens = text.split()
+    stemmed_tokens = [stemmer.stem(word) for word in raw_tokens]
+    
+    # 5. Stopword Removal (Dilakukan di akhir agar kata dasar yang tersaring)
+    final_tokens = [word for word in stemmed_tokens if word not in CUSTOM_STOPWORDS and len(word) > 1]
 
-# ── 4. CONTOH PENGGUNAAN ─────────────────────────────────────────────────────
-if __name__ == "__main__":
-    test_kalimat = "Laba Bersih PT Garuda Indonesia Merosot Rp5,4 Triliun, Saham GIAA Anjlok Sangat Parah!"
-    hasil = preprocess(test_kalimat)
-    print(f"Input : {test_kalimat}")
-    print(f"Hasil : {hasil}")
+    return {
+        "original": text,
+        "tokens": final_tokens,
+        "result": " ".join(final_tokens)
+    }
+
+# Uji Coba
+kalimat = "Laba Bersih PT Garuda Indonesia Merosot Rp5,4 Triliun, Saham GIAA Anjlok Sangat Parah!"
+hasil = preprocess_v2(kalimat)
+print(hasil['tokens'])
+    
