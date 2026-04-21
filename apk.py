@@ -177,8 +177,7 @@ user_input = st.text_area(
     placeholder="Contoh: Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
     height=110,
     help="Masukkan satu atau beberapa kalimat judul berita berbahasa Indonesia.",
-    value=st.session_state.user_input,
-    key="text_input"
+    key="user_input"
 )
 
 # ── Contoh cepat ─────────────────────────────────────────────────────────────
