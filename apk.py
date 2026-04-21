@@ -168,11 +168,17 @@ st.markdown(
 )
 
 # ── Input teks ────────────────────────────────────────────────────────────────
+# Inisialisasi session state untuk user input
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
+
 user_input = st.text_area(
     label="✏️ Judul Berita",
     placeholder="Contoh: Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
     height=110,
     help="Masukkan satu atau beberapa kalimat judul berita berbahasa Indonesia.",
+    value=st.session_state.user_input,
+    key="text_input"
 )
 
 # ── Contoh cepat ─────────────────────────────────────────────────────────────
@@ -183,19 +189,24 @@ example_texts = {
     "😞 Negatif": "Garuda Indonesia Rugi Rp 2,4 Triliun, Saham Anjlok 15%",
     "😐 Netral" : "OJK Rilis Aturan Baru Terkait Investasi Reksa Dana 2024",
 }
+
 with col1:
     if st.button("😊 Contoh Positif", use_container_width=True):
-        user_input = example_texts["😊 Positif"]
-        st.session_state["quick_input"] = user_input
+        st.session_state.user_input = example_texts["😊 Positif"]
+        st.rerun()
+
 with col2:
     if st.button("😞 Contoh Negatif", use_container_width=True):
-        user_input = example_texts["😞 Negatif"]
-        st.session_state["quick_input"] = user_input
+        st.session_state.user_input = example_texts["😞 Negatif"]
+        st.rerun()
+
 with col3:
     if st.button("😐 Contoh Netral", use_container_width=True):
-        user_input = example_texts["😐 Netral"]
-        st.session_state["quick_input"] = user_input
+        st.session_state.user_input = example_texts["😐 Netral"]
+        st.rerun()
 
+# Perbarui user_input dari session state
+user_input = st.session_state.user_input
 # Gunakan session state untuk quick input
 if "quick_input" in st.session_state and not user_input:
     user_input = st.session_state["quick_input"]
