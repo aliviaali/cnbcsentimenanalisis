@@ -74,6 +74,7 @@ st.markdown("""
 @st.cache_resource(show_spinner="Memuat model...")
 def load_models():
     """Load semua model dan TF-IDF vectorizer dari file .pkl"""
+    models = {}
     files = {
         "Naive Bayes"          : "naive_bayes.pkl",
         "SVM"                  : "svm.pkl",
@@ -166,18 +167,12 @@ st.markdown(
     "menggunakan model **Machine Learning** berbasis **TF-IDF N-gram (1,2)**."
 )
 
-# ── Inisialisasi Session State untuk Quick Input ──────────────────────────────
-if "quick_input" not in st.session_state:
-    st.session_state["quick_input"] = ""
-
 # ── Input teks ────────────────────────────────────────────────────────────────
-# PERBAIKAN UTAMA: Menggunakan parameter 'value' untuk sinkronisasi langsung
 user_input = st.text_area(
     label="✏️ Judul Berita",
     placeholder="Contoh: Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
     height=110,
     help="Masukkan satu atau beberapa kalimat judul berita berbahasa Indonesia.",
-    value=st.session_state.get("quick_input", ""), # Mengambil nilai dari session state
 )
 
 # ── Contoh cepat ─────────────────────────────────────────────────────────────
@@ -190,18 +185,20 @@ example_texts = {
 }
 with col1:
     if st.button("😊 Contoh Positif", use_container_width=True):
-        st.session_state["quick_input"] = example_texts["😊 Positif"]
-        st.rerun() # Memaksa re-render untuk memperbarui text_area dengan nilai baru
-
+        user_input = example_texts["😊 Positif"]
+        st.session_state["quick_input"] = user_input
 with col2:
     if st.button("😞 Contoh Negatif", use_container_width=True):
-        st.session_state["quick_input"] = example_texts["😞 Negatif"]
-        st.rerun() # Memaksa re-render untuk memperbarui text_area dengan nilai baru
-
+        user_input = example_texts["😞 Negatif"]
+        st.session_state["quick_input"] = user_input
 with col3:
     if st.button("😐 Contoh Netral", use_container_width=True):
-        st.session_state["quick_input"] = example_texts["😐 Netral"]
-        st.rerun() # Memaksa re-render untuk memperbarui text_area dengan nilai baru
+        user_input = example_texts["😐 Netral"]
+        st.session_state["quick_input"] = user_input
+
+# Gunakan session state untuk quick input
+if "quick_input" in st.session_state:
+    user_input = st.session_state["quick_input"]
 
 # ── Tombol Analisis ───────────────────────────────────────────────────────────
 analyze_btn = st.button("🔍 Analisis Sentimen", type="primary", use_container_width=True)
@@ -247,27 +244,14 @@ def predict_sentiment(text: str, model_name: str):
     X_vec = tfidf.transform([clean_text])
 
     # Prediksi
-    pred_int = model.predict(X_vec)
-    
-    # PERBAIKAN: Konversi ke int dan validasi
-    try:
-        pred_int = int(pred_int)  # Konversi numpy int ke Python int
-    except (ValueError, TypeError):
-        st.error(f"❌ Error: Prediksi model tidak valid: {pred_int}")
-        return None, None, None, None
-    
-    # Validasi bahwa pred_int ada di LABEL_MAP
-    if pred_int not in LABEL_MAP:
-        st.error(f"❌ Error: Nilai prediksi {pred_int} tidak dikenali. Nilai valid: 0, 1, 2")
-        return None, None, None, None
-    
-    label = LABEL_MAP[pred_int]
+    pred_int = model.predict(X_vec)[0]
+    label    = LABEL_MAP[pred_int]
 
     # Confidence (decision_function atau predict_proba)
     conf = {}
     try:
         # LinearSVC → decision_function (bukan probabilitas)
-        df_scores = model.decision_function(X_vec)
+        df_scores = model.decision_function(X_vec)[0]
         # Softmax normalization untuk visualisasi
         import numpy as np
         exp_s = [float(x) for x in df_scores]
@@ -281,12 +265,13 @@ def predict_sentiment(text: str, model_name: str):
     except AttributeError:
         pass
     try:
-        proba = model.predict_proba(X_vec)
+        proba = model.predict_proba(X_vec)[0]
         conf  = {LABEL_MAP[i]: round(float(p) * 100, 1) for i, p in enumerate(proba)}
     except AttributeError:
         pass
 
     return label, conf, clean_text, steps
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HASIL PREDIKSI
