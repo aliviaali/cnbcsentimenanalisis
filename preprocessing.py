@@ -11,8 +11,6 @@ stopword_factory = StopWordRemoverFactory()
 base_stopwords   = set(stopword_factory.get_stop_words())
 
 # ── Kata yang HARUS dikecualikan dari stopword (penting untuk berita keuangan) ─
-# preprocessing.py
-
 # 1. Tambahkan daftar kata "sampah" yang sering muncul di berita tapi tidak ada di stopword dasar
 ADDITIONAL_STOPWORDS = {
     "rp", "pt", "tbk", "idr", "usd", "jt", "jt", "m", "t", "redaksi", 
@@ -38,7 +36,7 @@ EXCLUDE_FROM_STOPWORDS = {
     "mulai", "bulan", "depan", "hari", "minggu", "tahun", "kuartal",
     "setelah", "sebelum", "saat", "ketika", "sementara", "terkait", "ojk",
     "rilis", "aturan", "laporan", "efektif",
-    # Organisasi & institusi (Hapus 'indonesia' dari sini jika ingin dibuang)
+    # Organisasi & institusi
     "bank", "bri", "garuda", "indonesia", "cnbc",
     # Kata aksi & status
     "catat", "cetak", "catatkan", "raih", "capai", "peroleh",
@@ -53,7 +51,27 @@ EXCLUDE_FROM_STOPWORDS = {
 # lalu buang kata-kata yang dianggap penting (EXCLUDE).
 CUSTOM_STOPWORDS = (base_stopwords | ADDITIONAL_STOPWORDS) - EXCLUDE_FROM_STOPWORDS
 
-
+# ── MANUAL STEMMING RULES (untuk kata yang tidak ditangani Sastrawi) ────────
+MANUAL_STEM_RULES = {
+    "merosot": "rosot",
+    "melonjak": "lonjak",
+    "meningkat": "tingkat",
+    "menurun": "turun",
+    "anjlok": "anjlok",      # sudah bentuk dasar
+    "tumbuh": "tumbuh",      # sudah bentuk dasar
+    "stagnan": "stagnan",    # sudah bentuk dasar
+    "rebound": "rebound",    # sudah bentuk dasar
+    "koreksi": "koreksi",    # sudah bentuk dasar
+    "laba": "laba",          # sudah bentuk dasar
+    "rugi": "rugi",          # sudah bentuk dasar
+    "untung": "untung",      # sudah bentuk dasar
+    "defisit": "defisit",    # sudah bentuk dasar
+    "surplus": "surplus",    # sudah bentuk dasar
+    "bangkrut": "bangkrut",  # sudah bentuk dasar
+    "pailit": "pailit",      # sudah bentuk dasar
+    "likuid": "likuid",      # sudah bentuk dasar
+    "solven": "solven",      # sudah bentuk dasar
+}
 
 # ── Fungsi Preprocessing ──────────────────────────────────────────────────────
 
@@ -85,8 +103,16 @@ def stopword_removal(tokens: list) -> list:
 
 
 def stemming(tokens: list) -> list:
-    """Melakukan stemming menggunakan Sastrawi."""
-    return [stemmer.stem(word) for word in tokens]
+    """Melakukan stemming dengan manual rules + Sastrawi."""
+    result = []
+    for word in tokens:
+        # Cek manual rules dulu
+        if word in MANUAL_STEM_RULES:
+            result.append(MANUAL_STEM_RULES[word])
+        else:
+            # Jika tidak ada di manual rules, gunakan Sastrawi
+            result.append(stemmer.stem(word))
+    return result
 
 
 def preprocess(text: str) -> str:
