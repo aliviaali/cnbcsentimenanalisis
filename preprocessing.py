@@ -1,69 +1,82 @@
+import streamlit as st
 import re
 import string
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
 
-# ── 1. INISIALISASI (Hanya dijalankan sekali) ────────────────────────────────
-stemmer_factory = StemmerFactory()
-stemmer = stemmer_factory.create_stemmer()
+# --- 1. SETTINGS & CSS (KEBAHARUAN: WARNA TOMBOL) ---
+st.set_page_config(page_title="Analisis Sentimen", layout="centered")
 
-stopword_factory = StopWordRemoverFactory()
-base_stopwords = set(stopword_factory.get_stop_words())
+st.markdown("""
+    <style>
+    /* Warna tombol saat ditekan (active) dan hover */
+    div.stButton > button:first-child {
+        background-color: #f0f2f6;
+        color: black;
+        border-radius: 10px;
+    }
+    div.stButton > button:active {
+        background-color: #ff4b4b !important;
+        color: white !important;
+    }
+    div.stButton > button:hover {
+        border-color: #ff4b4b;
+        color: #ff4b4b;
+    }
+    </style>
+""", unsafe_allow_stdio=True)
 
-# ── 2. KAMUS CUSTOM (Untuk membersihkan Rp, PT, dan menjaga kata sentimen) ──
-ADDITIONAL_STOPWORDS = {
-    "rp", "pt", "tbk", "idr", "usd", "jt", "m", "t", "via", "redaksi", "berita"
-}
-
-# Kata penting (Gunakan kata dasar karena difilter setelah stemming)
-EXCLUDE_FROM_STOPWORDS = {
-    "naik", "turun", "anjlok", "rosot", "lonjak", "tumbuh", "tingkat",
-    "laba", "rugi", "untung", "saham", "kuat", "lemah", "sangat", "parah",
-    "triliun", "miliar", "juta", "indonesia", "garuda", "positif", "negatif"
-}
-
-CUSTOM_STOPWORDS = (base_stopwords | ADDITIONAL_STOPWORDS) - EXCLUDE_FROM_STOPWORDS
-
-# ── 3. FUNGSI PREPROCESSING (Satu fungsi utama untuk UI/Tombol) ──────────────
-
-def case_folding(text: str) -> str:
-    return text.lower()
-
-def cleaning(text: str) -> str:
-    # Ganti tanda baca dengan spasi agar kata tidak menempel
-    text = text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
-    # Hapus angka
-    text = re.sub(r'\d+', ' ', text)
-    # Normalisasi spasi
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-def tokenization(text: str) -> list:
-    return text.split()
-
-def stemming(tokens: list) -> list:
-    return [stemmer.stem(word) for word in tokens]
-
-def stopword_removal(tokens: list) -> list:
-    return [word for word in tokens if word not in CUSTOM_STOPWORDS and len(word) > 1]
-
-def preprocess(text: str) -> str:
-    """
-    Pipeline lengkap yang dipanggil oleh tombol UI.
-    Mengembalikan string agar kompatibel dengan model ML.
-    """
-    # Langkah 1-5
-    t1 = case_folding(text)
-    t2 = cleaning(t1)
-    t3 = tokenization(t2)
-    t4 = stemming(t3)           # Stemming dulu
-    t5 = stopword_removal(t4)   # Baru buang stopword
+# --- 2. INISIALISASI SASTRAWI ---
+@st.cache_resource
+def load_nlp_tools():
+    stemmer = StemmerFactory().create_stemmer()
+    base_stopwords = set(StopWordRemoverFactory().get_stop_words())
     
-    return " ".join(t5)
+    ADDITIONAL = {"rp", "pt", "tbk", "idr", "usd"}
+    EXCLUDE = {"naik", "turun", "anjlok", "rosot", "laba", "rugi", "saham", "garuda", "indonesia"}
+    custom_stopwords = (base_stopwords | ADDITIONAL) - EXCLUDE
+    
+    return stemmer, custom_stopwords
 
-# ── 4. CONTOH PENGGUNAAN ─────────────────────────────────────────────────────
-if __name__ == "__main__":
-    test_kalimat = "Laba Bersih PT Garuda Indonesia Merosot Rp5,4 Triliun, Saham GIAA Anjlok Sangat Parah!"
-    hasil = preprocess(test_kalimat)
-    print(f"Input : {test_kalimat}")
-    print(f"Hasil : {hasil}")
+stemmer, CUSTOM_STOPWORDS = load_nlp_tools()
+
+# --- 3. FUNGSI PREPROCESSING ---
+def preprocess(text):
+    text = text.lower()
+    text = text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
+    text = re.sub(r'\d+', ' ', text)
+    tokens = text.split()
+    # Stemming dulu baru stopword agar bersih
+    stemmed = [stemmer.stem(w) for w in tokens]
+    final = [w for w in stemmed if w not in CUSTOM_STOPWORDS and len(w) > 1]
+    return " ".join(final)
+
+# --- 4. LOGIKA TOMBOL (PERBAIKAN: SESSION STATE) ---
+if 'input_teks' not in st.session_state:
+    st.session_state.input_teks = ""
+
+def set_text(example):
+    st.session_state.input_teks = example
+
+st.title("📰 Analisis Sentimen Berita")
+
+# Baris tombol contoh
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("🔖 Contoh Positif"):
+        set_text("Laba Bank BRI naik pesat tahun ini")
+with col2:
+    # Tombol Negatif dengan key unik
+    if st.button("😞 Contoh Negatif", key="btn_neg"):
+        set_text("Garuda Indonesia rugi triliunan saham anjlok parah")
+
+# Input teks terikat ke session_state
+judul_berita = st.text_input("Masukkan judul berita:", value=st.session_state.input_teks)
+
+if st.button("Analisis Sekarang", type="primary"):
+    if judul_berita:
+        hasil_bersih = preprocess(judul_berita)
+        st.write("### Hasil Preprocessing:")
+        st.success(f"Result: {hasil_bersih}")
+    else:
+        st.warning("Masukkan teks terlebih dahulu!")
