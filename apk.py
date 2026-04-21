@@ -90,6 +90,7 @@ def load_models():
 
     return models, tfidf
 
+
 models, tfidf = load_models()
 
 # Emoji & warna per kelas
@@ -156,7 +157,7 @@ st.markdown(
     "menggunakan model **Machine Learning** berbasis **TF-IDF N-gram (1,2)**."
 )
 
-# INPUT
+# ── Input teks (FIX DI SINI) ────────────────────────────────────────────────
 if "user_input" not in st.session_state:
     st.session_state.user_input = ""
 
@@ -164,13 +165,13 @@ user_input = st.text_area(
     label="✏️ Judul Berita",
     placeholder="Contoh: Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
     height=110,
+    help="Masukkan satu atau beberapa kalimat judul berita berbahasa Indonesia.",
     key="user_input"
 )
 
-# CONTOH
+# ── Contoh cepat ─────────────────────────────────────────────────────────────
 st.markdown("**🔖 Coba contoh cepat:**")
 col1, col2, col3 = st.columns(3)
-
 example_texts = {
     "😊 Positif": "Bank BRI Catat Laba Bersih Tumbuh 18% pada Kuartal III 2024",
     "😞 Negatif": "Garuda Indonesia Rugi Rp 2,4 Triliun, Saham Anjlok 15%",
@@ -192,9 +193,12 @@ with col3:
         st.session_state.user_input = example_texts["😐 Netral"]
         st.rerun()
 
+# ── Tombol Analisis ───────────────────────────────────────────────────────────
 analyze_btn = st.button("🔍 Analisis Sentimen", type="primary", use_container_width=True)
 
+# ─────────────────────────────────────────────────────────────────────────────
 # PREDIKSI
+# ─────────────────────────────────────────────────────────────────────────────
 if analyze_btn and user_input.strip():
     with st.spinner("Menganalisis..."):
         time.sleep(0.4)
