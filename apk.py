@@ -74,7 +74,6 @@ st.markdown("""
 @st.cache_resource(show_spinner="Memuat model...")
 def load_models():
     """Load semua model dan TF-IDF vectorizer dari file .pkl"""
-    models = {}
     files = {
         "Naive Bayes"          : "naive_bayes.pkl",
         "SVM"                  : "svm.pkl",
