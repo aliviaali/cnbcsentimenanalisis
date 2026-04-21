@@ -1,4 +1,3 @@
-```python
 # app.py
 # =============================================================================
 # Streamlit App — Sentiment Analysis Berita CNBC Indonesia
