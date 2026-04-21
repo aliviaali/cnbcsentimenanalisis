@@ -1,4 +1,3 @@
-```python
 # app.py
 # =============================================================================
 # Streamlit App — Sentiment Analysis Berita CNBC Indonesia
@@ -147,4 +146,3 @@ if st.button("🔍 Analisis Sentimen"):
 
             st.markdown("### 🧹 Hasil Preprocessing")
             st.write(clean)
-```
