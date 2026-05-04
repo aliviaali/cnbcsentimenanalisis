@@ -21,7 +21,7 @@ ADDITIONAL_STOPWORDS = {
 EXCLUDE_FROM_STOPWORDS = {
     "naik", "turun", "anjlok", "rosot", "lonjak", "tumbuh", "tingkat",
     "laba", "rugi", "untung", "defisit", "surplus", "saham", "kuat", 
-    "lemah", "sangat", "parah", "triliun", "miliar", "juta"
+    "lemah", "sangat", "parah", "triliun", "miliar", "juta", "berita,
 }
 
 CUSTOM_STOPWORDS = (base_stopwords | ADDITIONAL_STOPWORDS) - EXCLUDE_FROM_STOPWORDS
